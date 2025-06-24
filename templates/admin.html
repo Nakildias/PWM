@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1 class="mb-4">Admin Panel</h1>
+    <div class="card">
+        <div class="card-header">
+            Application Settings
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">User Registration</h5>
+            <p class="card-text">
+                User registration is currently <strong>{{ 'Enabled' if allow_registration else 'Disabled' }}</strong>.
+            </p>
+            <a href="{{ url_for('toggle_registration') }}" class="btn btn-{{ 'danger' if allow_registration else 'success' }}">
+                {{ 'Disable' if allow_registration else 'Enable' }} Registration
+            </a>
+        </div>
+        <div class="card-body border-top">
+            <h5 class="card-title">Code Editor Theme</h5>
+            <p class="card-text">
+                Select the theme for the file editor.
+            </p>
+            <form method="POST" action="{{ url_for('set_codemirror_theme') }}">
+                <div class="row">
+                    <div class="col-md-6">
+                         <select name="theme" class="form-select">
+                            {% for theme in themes %}
+                                <option value="{{ theme }}" {% if theme == codemirror_theme %}selected{% endif %}>{{ theme }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <button type="submit" class="btn btn-primary">Set Theme</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

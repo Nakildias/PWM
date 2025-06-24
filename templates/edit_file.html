@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/dialog/dialog.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/theme/{{ theme }}.css">
+<style>
+    .CodeMirror {
+        border: 1px solid #eee;
+        height: auto;
+    }
+</style>
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+        <li class="breadcrumb-item"><a href="{{ url_for('manage_files', site_id=site.id) }}">{{ site.name }} - File Manager</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Editing: {{ file_path }}</li>
+    </ol>
+</nav>
+
+<h1 class="h2">Edit File: {{ file_path }}</h1>
+
+<form method="POST" action="{{ url_for('save_file', site_id=site.id, path=file_path) }}">
+    <div class="mb-3">
+        <textarea id="codeeditor" name="content">{{ content }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Changes</button>
+    <a href="{{ url_for('manage_files', site_id=site.id, path=parent_path) }}" class="btn btn-secondary">Cancel</a>
+</form>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/search/search.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/search/jump-to-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/dialog/dialog.min.js"></script>
+
+<script>
+    var editor = CodeMirror.fromTextArea(document.getElementById("codeeditor"), {
+        lineNumbers: true,
+        theme: "{{ theme }}",
+        mode: "{{ mode }}",
+        extraKeys: {
+            "Ctrl-F": "findPersistent"
+        }
+    });
+</script>
+{% endblock %}

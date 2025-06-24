@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ site.name }} - File Manager</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">File Manager: {{ site.name }}</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <button type="button" class="btn btn-sm btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#uploadFileModal">
+            <i class="bi bi-upload"></i> Upload File
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#createFolderModal">
+            <i class="bi bi-folder-plus"></i> Create Folder
+        </button>
+    </div>
+</div>
+
+<h4>Path: /{{ current_path }}</h4>
+
+{% if session.get('clipboard') %}
+<div class="alert alert-info d-flex justify-content-between align-items-center">
+    <span>
+        Clipboard:
+        <strong>{{ session['clipboard']['action'].capitalize() }}</strong>
+        "{{ session['clipboard']['source_name'] }}"
+    </span>
+    <div>
+        <a href="{{ url_for('paste_item', site_id=site.id, dest_path=current_path) }}" class="btn btn-sm btn-primary"><i class="bi bi-clipboard-plus"></i> Paste Here</a>
+        <a href="{{ url_for('clear_clipboard', site_id=site.id, current_path=current_path) }}" class="btn btn-sm btn-secondary"><i class="bi bi-x-circle"></i> Clear</a>
+    </div>
+</div>
+{% endif %}
+
+
+<div class="table-responsive">
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Size</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if current_path %}
+            <tr>
+                <td><a href="{{ url_for('manage_files', site_id=site.id, path=parent_path) }}"><i class="bi bi-arrow-return-left"></i> ..</a></td>
+                <td>Parent Directory</td>
+                <td></td>
+                <td></td>
+            </tr>
+            {% endif %}
+            {% for item in items %}
+            <tr>
+                <td>
+                    {% if item.is_dir %}
+                        <i class="bi bi-folder-fill text-warning"></i>
+                        <a href="{{ url_for('manage_files', site_id=site.id, path=item.path) }}">{{ item.name }}</a>
+                    {% else %}
+                        <i class="bi bi-file-earmark-text"></i> {{ item.name }}
+                    {% endif %}
+                </td>
+                <td>{{ 'Directory' if item.is_dir else 'File' }}</td>
+                <td>{{ item.size if not item.is_dir else '' }}</td>
+                <td>
+                    {% if not item.is_dir %}
+                    <a href="{{ url_for('download_file', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-success"><i class="bi bi-download"></i></a>
+                    <a href="{{ url_for('edit_file', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square"></i> Edit</a>
+                    {% endif %}
+                    <a href="{{ url_for('copy_item', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard"></i> Copy</a>
+                    <a href="{{ url_for('cut_item', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-info"><i class="bi bi-scissors"></i> Cut</a>
+
+                    <form action="{{ url_for('delete_item', site_id=site.id, path=item.path) }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete {{ item.name }}?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="4" class="text-center">This directory is empty.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="uploadFileModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Upload File</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('upload_file', site_id=site.id, path=current_path) }}" method="post" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <input type="file" name="file" class="form-control" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="createFolderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create Folder</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('create_folder', site_id=site.id, path=current_path) }}" method="post">
+                <div class="modal-body">
+                    <input type="text" name="folder_name" class="form-control" placeholder="New Folder Name" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
