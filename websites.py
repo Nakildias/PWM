@@ -22,5 +22,5 @@ def run_website(site_root_path, port):
     """
     site_app = create_site_app(site_root_path)
     # Running with debug=False is important for production-like environments
-    site_app.run(port=port, debug=False)
+    site_app.run(host='0.0.0.0', port=port, debug=False)
 
