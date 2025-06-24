@@ -4,17 +4,21 @@
 INSTALL_DIR="$HOME/.local/share/pwm"
 VENV_DIR="$INSTALL_DIR/venv"
 RUN_SCRIPT="/usr/local/bin/pwm.sh"
-SERVICE_FILE_DIR="$HOME/.config/systemd/user"
+# Change service file directory to system-wide
+SERVICE_FILE_DIR="/etc/systemd/system"
 SERVICE_FILE_PATH="$SERVICE_FILE_DIR/pwm.service"
 REQUIREMENTS_FILE="$INSTALL_DIR/requirements.txt"
 
 echo "Starting PWM installer..."
 
+# Get the current user's username for the systemd service
+CURRENT_USER=$(whoami)
+
 # 1. Create installation directory
 echo "Creating installation directory: $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR" || { echo "Failed to create installation directory."; exit 1; }
 
-# 2. Copy Python files and templates
+# 2. Copy Python files and templates (assuming they are in the current directory)
 echo "Copying application files to $INSTALL_DIR..."
 cp "config.py" "$INSTALL_DIR/" || { echo "Failed to copy config.py."; exit 1; }
 cp "README.md" "$INSTALL_DIR/" || { echo "Failed to copy README.md."; exit 1; }
@@ -45,40 +49,43 @@ VENV_PYTHON=\"\$PWM_INSTALL_DIR/venv/bin/python\"
 sudo chmod +x "$RUN_SCRIPT" || { echo "Failed to make $RUN_SCRIPT executable."; exit 1; }
 echo "Runner script created and made executable."
 
-# 6. Create systemd user service file
-echo "Creating systemd user service file at $SERVICE_FILE_PATH..."
-mkdir -p "$SERVICE_FILE_DIR" || { echo "Failed to create service file directory. Check permissions."; exit 1; }
-cat <<EOF > "$SERVICE_FILE_PATH"
+# 6. Create systemd system service file
+echo "Creating systemd system service file at $SERVICE_FILE_PATH..."
+# This operation requires sudo as it's writing to /etc/systemd/system
+cat <<EOF | sudo tee "$SERVICE_FILE_PATH" > /dev/null
 [Unit]
 Description=Python Website Manager
 After=network.target
 
 [Service]
 ExecStart=/usr/local/bin/pwm.sh
-WorkingDirectory=%h/.local/share/pwm
+# WorkingDirectory should be the absolute path to the PWM application files
+WorkingDirectory=$INSTALL_DIR
+# Run the service as the user who installed it, or specify a dedicated user
+User=$CURRENT_USER
+Group=$CURRENT_USER # Optional, but good practice
 StandardOutput=journal
 StandardError=journal
 Restart=always
-# The service runs as the user who enables it via systemctl --user
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOF
 echo "Service file created."
 
 echo ""
 echo "---------------------------------------------------------"
 echo "PWM installation complete!"
-echo "To start the PWM service, please run the following commands:"
-echo "systemctl --user daemon-reload"
-echo "systemctl --user enable --now pwm.service"
+echo "To manage the PWM service, please run the following commands (requires sudo):"
+echo "sudo systemctl daemon-reload"
+echo "sudo systemctl enable --now pwm.service"
 echo ""
 echo "To check the service status:"
-echo "systemctl --user status pwm.service"
+echo "sudo systemctl status pwm.service"
 echo ""
 echo "To stop the service:"
-echo "systemctl --user stop pwm.service"
+echo "sudo systemctl stop pwm.service"
 echo ""
 echo "To view logs:"
-echo "journalctl --user -u pwm.service -f"
+echo "journalctl -u pwm.service -f"
 echo "---------------------------------------------------------"
