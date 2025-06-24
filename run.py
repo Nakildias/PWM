@@ -99,6 +99,24 @@ class WebsiteForm(FlaskForm):
         if site:
             raise ValidationError('This port is already in use. Please choose another.')
 
+class EditUserForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
+    password = PasswordField('New Password (leave blank to keep current)')
+    confirm_password = PasswordField('Confirm New Password', validators=[EqualTo('password', message='Passwords must match')])
+    is_admin = BooleanField('Is Admin')
+    submit = SubmitField('Update User')
+
+    def __init__(self, original_username, user_id, *args, **kwargs):
+        super(EditUserForm, self).__init__(*args, **kwargs)
+        self.original_username = original_username
+        self.user_id = user_id
+
+    def validate_username(self, username):
+        if username.data != self.original_username:
+            user = User.query.filter_by(username=username.data).first()
+            if user and user.id != self.user_id:
+                raise ValidationError('That username is taken. Please choose a different one.')
+
 # -----------------------------------------------------------------------------
 # Helper Functions
 # -----------------------------------------------------------------------------
@@ -255,6 +273,67 @@ def set_codemirror_theme():
     db.session.commit()
     flash(f'CodeMirror theme has been set to {theme}.', 'success')
     return redirect(url_for('admin_panel'))
+
+@app.route('/admin/users')
+@login_required
+def manage_users():
+    if not current_user.is_admin:
+        flash('You do not have permission to access this page.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    users = User.query.all()
+    return render_template('manage_users.html', title='Manage Users', users=users)
+
+@app.route('/admin/users/edit/<int:user_id>', methods=['GET', 'POST'])
+@login_required
+def edit_user(user_id):
+    if not current_user.is_admin:
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    user = db.get_or_404(User, user_id)
+    form = EditUserForm(original_username=user.username, user_id=user.id)
+
+    if form.validate_on_submit():
+        user.username = form.username.data
+
+        if form.password.data: # Only update password if a new one is provided
+            user.set_password(form.password.data)
+
+        # Prevent non-admin user from revoking their own admin status
+        if user.id == current_user.id and not form.is_admin.data:
+            flash("You cannot revoke your own admin privileges.", 'danger')
+            return redirect(url_for('edit_user', user_id=user.id))
+
+        user.is_admin = form.is_admin.data
+
+        db.session.commit()
+        flash(f'User "{user.username}" updated successfully!', 'success')
+        return redirect(url_for('manage_users'))
+    elif request.method == 'GET':
+        form.username.data = user.username
+        form.is_admin.data = user.is_admin
+
+    return render_template('edit_user.html', title=f'Edit User: {user.username}', form=form, user=user)
+
+@app.route('/admin/users/delete/<int:user_id>', methods=['POST'])
+@login_required
+def delete_user(user_id):
+    if not current_user.is_admin:
+        flash('You do not have permission to perform this action.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    user_to_delete = db.get_or_404(User, user_id)
+
+    if user_to_delete.id == current_user.id:
+        flash("You cannot delete your own account.", 'danger')
+        return redirect(url_for('manage_users'))
+
+    username = user_to_delete.username
+    db.session.delete(user_to_delete)
+    db.session.commit()
+    flash(f'User "{username}" and all their associated websites have been deleted.', 'success')
+    return redirect(url_for('manage_users'))
 
 
 # --- Website Management Routes ---
@@ -699,6 +778,6 @@ if __name__ == '__main__':
     init_app_on_start()
     start_autostart_websites()
     try:
-        app.run(debug=True, threaded=True, use_reloader=False)
+        app.run(host='0.0.0.0', debug=True, threaded=True, use_reloader=False)
     finally:
         cleanup_processes()
