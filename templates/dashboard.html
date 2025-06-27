@@ -19,6 +19,7 @@
                 <th scope="col">Name</th>
                 <th scope="col">Port</th>
                 <th scope="col">Status</th>
+                <th scope="col">Daily Views</th>
                 <th scope="col">AutoStart</th>
                 <th scope="col">Actions</th>
             </tr>
@@ -36,6 +37,11 @@
                     {% endif %}
                 </td>
                 <td>
+                    <a href="#" class="view-stats" data-site-id="{{ site.id }}" data-site-name="{{ site.name }}" data-bs-toggle="modal" data-bs-target="#statsModal">
+                        {{ daily_visits.get(site.id, 0) }}
+                    </a>
+                </td>
+                <td>
                     <a href="{{ url_for('toggle_autostart', site_id=site.id) }}" class="btn btn-sm {% if site.autostart %}btn-info{% else %}btn-outline-secondary{% endif %}" title="Click to toggle autostart">
                         {% if site.autostart %}Enabled{% else %}Disabled{% endif %}
                     </a>
@@ -48,6 +54,7 @@
                         <a href="{{ url_for('start_website', site_id=site.id) }}" class="btn btn-sm btn-outline-success"><i class="bi bi-play-circle"></i> Start</a>
                     {% endif %}
                     <a href="{{ url_for('manage_files', site_id=site.id) }}" class="btn btn-sm btn-outline-info"><i class="bi bi-folder"></i> Files</a>
+                    <a href="{{ url_for('edit_website', site_id=site.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil-square"></i> Edit</a>
                     <form method="POST" action="{{ url_for('delete_website', site_id=site.id) }}" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this site and all its files?');">
                         <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Delete</button>
                     </form>
@@ -55,7 +62,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="5" class="text-center">You haven't created any websites yet.</td>
+                <td colspan="6" class="text-center">You haven't created any websites yet.</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -90,4 +97,220 @@
     </div>
   </div>
 </div>
+
+<!-- Stats Modal -->
+<div class="modal fade" id="statsModal" tabindex="-1" aria-labelledby="statsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="statsModalLabel">Visitor Statistics for </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="nav nav-tabs" id="statsTab" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="hourly-tab" data-bs-toggle="tab" data-bs-target="#hourly" type="button" role="tab" aria-controls="hourly" aria-selected="true">Hourly</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="daily-tab" data-bs-toggle="tab" data-bs-target="#daily" type="button" role="tab" aria-controls="daily" aria-selected="false">Daily</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="monthly-tab" data-bs-toggle="tab" data-bs-target="#monthly" type="button" role="tab" aria-controls="monthly" aria-selected="false">Monthly</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="yearly-tab" data-bs-toggle="tab" data-bs-target="#yearly" type="button" role="tab" aria-controls="yearly" aria-selected="false">Yearly</button>
+          </li>
+        </ul>
+        <div class="tab-content" id="statsTabContent">
+          <div class="tab-pane fade show active" id="hourly" role="tabpanel" aria-labelledby="hourly-tab">
+            <canvas id="hourlyVisitsChart"></canvas>
+          </div>
+          <div class="tab-pane fade" id="daily" role="tabpanel" aria-labelledby="daily-tab">
+            <canvas id="dailyVisitsChart"></canvas>
+          </div>
+          <div class="tab-pane fade" id="monthly" role="tabpanel" aria-labelledby="monthly-tab">
+            <canvas id="monthlyVisitsChart"></canvas>
+          </div>
+          <div class="tab-pane fade" id="yearly" role="tabpanel" aria-labelledby="yearly-tab">
+            <canvas id="yearlyVisitsChart"></canvas>
+          </div>
+        </div>
+        <hr>
+        <h5>Recent Visits (Logs)</h5>
+        <div id="visitLogs" style="max-height: 300px; overflow-y: auto;">
+          <table class="table table-sm table-striped">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>IP Address</th>
+                <th>Country</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Logs will be inserted here by JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    let hourlyChart, dailyChart, monthlyChart, yearlyChart;
+
+    const statsModal = document.getElementById('statsModal');
+    statsModal.addEventListener('show.bs.modal', function (event) {
+        const button = event.relatedTarget;
+        const siteId = button.getAttribute('data-site-id');
+        const siteName = button.getAttribute('data-site-name');
+        const modalTitle = statsModal.querySelector('.modal-title');
+        modalTitle.textContent = 'Visitor Statistics for ' + siteName;
+
+        // Function to destroy existing charts
+        function destroyCharts() {
+            if (hourlyChart) hourlyChart.destroy();
+            if (dailyChart) dailyChart.destroy();
+            if (monthlyChart) monthlyChart.destroy();
+            if (yearlyChart) yearlyChart.destroy();
+        }
+
+        // Fetch and render all data
+        Promise.all([
+            fetch(`/website/stats/${siteId}`).then(res => res.json()), // Monthly and Yearly
+            fetch(`/website/stats/${siteId}/hourly`).then(res => res.json()),
+            fetch(`/website/stats/${siteId}/daily_unique`).then(res => res.json()),
+            fetch(`/website/stats/${siteId}/logs`).then(res => res.json())
+        ]).then(([monthlyYearlyData, hourlyData, dailyUniqueData, logsData]) => {
+            destroyCharts(); // Destroy previous charts before rendering new ones
+
+            // Monthly Chart
+            const monthlyCtx = document.getElementById('monthlyVisitsChart').getContext('2d');
+            monthlyChart = new Chart(monthlyCtx, {
+                type: 'bar',
+                data: {
+                    labels: monthlyYearlyData.monthly.labels,
+                    datasets: [{
+                        label: 'Monthly Visits',
+                        data: monthlyYearlyData.monthly.data,
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Yearly Chart
+            const yearlyCtx = document.getElementById('yearlyVisitsChart').getContext('2d');
+            yearlyChart = new Chart(yearlyCtx, {
+                type: 'line',
+                data: {
+                    labels: monthlyYearlyData.yearly.labels,
+                    datasets: [{
+                        label: 'Yearly Visits',
+                        data: monthlyYearlyData.yearly.data,
+                        fill: false,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Hourly Chart
+            const hourlyCtx = document.getElementById('hourlyVisitsChart').getContext('2d');
+            hourlyChart = new Chart(hourlyCtx, {
+                type: 'bar',
+                data: {
+                    labels: hourlyData.labels,
+                    datasets: [{
+                        label: 'Hourly Visits',
+                        data: hourlyData.data,
+                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
+                        borderColor: 'rgba(255, 99, 132, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Daily Unique Chart
+            const dailyCtx = document.getElementById('dailyVisitsChart').getContext('2d');
+            dailyChart = new Chart(dailyCtx, {
+                type: 'line',
+                data: {
+                    labels: dailyUniqueData.labels,
+                    datasets: [{
+                        label: 'Daily Unique Visits',
+                        data: dailyUniqueData.data,
+                        fill: false,
+                        borderColor: 'rgb(153, 102, 255)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Populate Visit Logs
+            const visitLogsBody = document.querySelector('#visitLogs tbody');
+            visitLogsBody.innerHTML = ''; // Clear previous logs
+            logsData.forEach(log => {
+                const row = visitLogsBody.insertRow();
+                const timeCell = row.insertCell();
+                const ipCell = row.insertCell();
+                const countryCell = row.insertCell();
+
+                timeCell.textContent = log.timestamp;
+                ipCell.textContent = log.ip_address;
+
+                if (log.country_code) {
+                    countryCell.innerHTML = `<img src="https://flagsapi.com/${log.country_code}/flat/16.png" alt="${log.country_name}" title="${log.country_name}" class="me-2"> ${log.country_name}`;
+                } else {
+                    countryCell.textContent = 'Unknown';
+                }
+            });
+
+            // Show hourly tab by default
+            const hourlyTab = new bootstrap.Tab(document.getElementById('hourly-tab'));
+            hourlyTab.show();
+
+        }).catch(error => {
+            console.error('Error fetching visitor stats:', error);
+            // Optionally display an error message in the modal
+        });
+    });
+});
+</script>
 {% endblock %}

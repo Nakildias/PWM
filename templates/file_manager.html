@@ -69,16 +69,26 @@
                 <td>{{ 'Directory' if item.is_dir else 'File' }}</td>
                 <td>{{ item.size if not item.is_dir else '' }}</td>
                 <td>
-                    {% if not item.is_dir %}
-                    <a href="{{ url_for('download_file', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-success"><i class="bi bi-download"></i></a>
-                    <a href="{{ url_for('edit_file', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square"></i> Edit</a>
-                    {% endif %}
-                    <a href="{{ url_for('copy_item', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clipboard"></i> Copy</a>
-                    <a href="{{ url_for('cut_item', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-info"><i class="bi bi-scissors"></i> Cut</a>
+                    <div class="btn-group" role="group" aria-label="File actions">
+                        {% if not item.is_dir %}
+                        <a href="{{ url_for('download_file', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-success" title="Download"><i class="bi bi-download"></i></a>
+                        <a href="{{ url_for('edit_file', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil-square"></i></a>
+                        {% endif %}
+                        <button type="button" class="btn btn-sm btn-outline-warning rename-btn"
+                                data-bs-toggle="modal"
+                                data-bs-target="#renameItemModal"
+                                data-item-path="{{ item.path }}"
+                                data-item-name="{{ item.name }}"
+                                title="Rename">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <a href="{{ url_for('copy_item', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-secondary" title="Copy"><i class="bi bi-clipboard"></i></a>
+                        <a href="{{ url_for('cut_item', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-info" title="Cut"><i class="bi bi-scissors"></i></a>
 
-                    <form action="{{ url_for('delete_item', site_id=site.id, path=item.path) }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete {{ item.name }}?');">
-                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                    </form>
+                        <form action="{{ url_for('delete_item', site_id=site.id, path=item.path) }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete {{ item.name }}?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                        </form>
+                    </div>
                 </td>
             </tr>
             {% else %}
@@ -90,6 +100,7 @@
     </table>
 </div>
 
+<!-- All Modals -->
 <div class="modal fade" id="uploadFileModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -129,4 +140,62 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="renameItemModal" tabindex="-1" aria-labelledby="renameItemModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="renameItemModalLabel">Rename Item</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="renameForm" method="POST" action="{{ url_for('rename_item', site_id=site.id) }}">
+          <div class="modal-body">
+                <div class="mb-3">
+                    <label for="new_name" class="form-label">New Name</label>
+                    <input type="text" id="new_name" name="new_name" class="form-control" required>
+                    <input type="hidden" id="old_path" name="old_path">
+                </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button type="submit" class="btn btn-primary">Rename</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    console.log("file_manager.html script started."); // Added for debugging
+    const renameModal = document.getElementById('renameItemModal');
+    if (renameModal) {
+        renameModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const itemPath = button.getAttribute('data-item-path');
+            const itemName = button.getAttribute('data-item-name');
+
+            const newNameInput = renameModal.querySelector('#new_name');
+            const oldPathInput = renameModal.querySelector('#old_path');
+            const modalTitle = renameModal.querySelector('.modal-title');
+
+            console.log('Rename Modal - itemPath:', itemPath); // Debugging
+            console.log('Rename Modal - itemName:', itemName); // Debugging
+
+            modalTitle.textContent = 'Rename "' + (itemName || '') + '"';
+            newNameInput.value = itemName || ''; // Ensure it's not null/undefined
+            oldPathInput.value = itemPath || ''; // Ensure it's not null/undefined
+        });
+
+        // Clear inputs when modal is hidden
+        renameModal.addEventListener('hidden.bs.modal', function () {
+            renameModal.querySelector('#new_name').value = '';
+            renameModal.querySelector('#old_path').value = '';
+        });
+    } else {
+        console.error('Rename modal element not found!');
+    }
+});
+</script>
 {% endblock %}
+</body>
+</html>
