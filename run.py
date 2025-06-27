@@ -3,14 +3,16 @@ import subprocess
 import sys
 import shutil
 from multiprocessing import Process, active_children
-from flask import Flask, render_template, redirect, url_for, flash, session, request, send_from_directory, abort
+from flask import Flask, render_template, redirect, url_for, flash, session, request, send_from_directory, abort, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField, BooleanField, IntegerField
 from wtforms.validators import DataRequired, Length, EqualTo, ValidationError, NumberRange
+from datetime import date, datetime
 import config
 import websites
 
@@ -24,6 +26,7 @@ app = Flask(__name__)
 app.config.from_object(config.Config)
 
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
@@ -53,6 +56,33 @@ class Website(db.Model):
     autostart = db.Column(db.Boolean, default=False, nullable=False)
 
     __table_args__ = (db.UniqueConstraint('user_id', 'name', name='_user_id_name_uc'),)
+    visitors = db.relationship('Visitor', backref='website', lazy=True, cascade="all, delete-orphan")
+
+class Visitor(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    website_id = db.Column(db.Integer, db.ForeignKey('website.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False, default=lambda: date.today())
+    daily_visits = db.Column(db.Integer, default=1)
+
+    __table_args__ = (db.UniqueConstraint('website_id', 'date', name='_website_id_date_uc'),)
+
+class DailyUniqueVisitor(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    website_id = db.Column(db.Integer, db.ForeignKey('website.id'), nullable=False)
+    ip_address = db.Column(db.String(45), nullable=False) # IPv4 or IPv6
+    date = db.Column(db.Date, nullable=False, default=lambda: date.today())
+
+    __table_args__ = (db.UniqueConstraint('website_id', 'ip_address', 'date', name='_website_ip_date_uc'),)
+
+class VisitLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    website_id = db.Column(db.Integer, db.ForeignKey('website.id'), nullable=False)
+    ip_address = db.Column(db.String(45), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    country_code = db.Column(db.String(2), nullable=True)
+    country_name = db.Column(db.String(100), nullable=True)
+
+    __table_args__ = (db.Index('idx_website_timestamp', 'website_id', 'timestamp'),)
 
 class AppSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -117,6 +147,29 @@ class EditUserForm(FlaskForm):
             if user and user.id != self.user_id:
                 raise ValidationError('That username is taken. Please choose a different one.')
 
+class EditWebsiteForm(FlaskForm):
+    name = StringField('Website Name', validators=[DataRequired(), Length(min=3, max=50)])
+    port = IntegerField('Port', validators=[DataRequired(), NumberRange(min=1024, max=65535)])
+    submit = SubmitField('Update Website')
+
+    def __init__(self, original_name, original_port, user_id, *args, **kwargs):
+        super(EditWebsiteForm, self).__init__(*args, **kwargs)
+        self.original_name = original_name
+        self.original_port = original_port
+        self.user_id = user_id
+
+    def validate_name(self, name):
+        if name.data != self.original_name:
+            site = Website.query.filter_by(name=name.data, user_id=self.user_id).first()
+            if site:
+                raise ValidationError('You already have a website with this name.')
+
+    def validate_port(self, port):
+        if port.data != self.original_port:
+            site = Website.query.filter_by(port=port.data).first()
+            if site:
+                raise ValidationError('This port is already in use. Please choose another.')
+
 # -----------------------------------------------------------------------------
 # Helper Functions
 # -----------------------------------------------------------------------------
@@ -127,6 +180,11 @@ def get_next_available_port():
     while port in used_ports:
         port += 1
     return port
+
+def get_daily_visits(site_id):
+    today = date.today()
+    visitor_entry = Visitor.query.filter_by(website_id=site_id, date=today).first()
+    return visitor_entry.daily_visits if visitor_entry else 0
 
 def get_site_base_path(site):
     """Returns the base directory path for a given site."""
@@ -174,7 +232,8 @@ def dashboard():
     form = WebsiteForm()
     form.port.data = get_next_available_port()
     user_websites = Website.query.filter_by(user_id=current_user.id).all()
-    return render_template('dashboard.html', title='Dashboard', sites=user_websites, form=form, running_processes=running_processes)
+    daily_visits = {site.id: get_daily_visits(site.id) for site in user_websites}
+    return render_template('dashboard.html', title='Dashboard', sites=user_websites, form=form, running_processes=running_processes, daily_visits=daily_visits)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -373,7 +432,7 @@ def start_website(site_id):
         return redirect(url_for('dashboard'))
 
     site_path = get_site_base_path(site)
-    process = Process(target=websites.run_website, args=(site_path, site.port))
+    process = Process(target=websites.run_website, args=(site_path, site.port, site.id))
     process.start()
 
     site.process_id = process.pid
@@ -441,6 +500,37 @@ def delete_website(site_id):
     db.session.commit()
     flash(f'Website "{site.name}" and all its files have been deleted.', 'success')
     return redirect(url_for('dashboard'))
+
+@app.route('/website/edit/<int:site_id>', methods=['GET', 'POST'])
+@login_required
+def edit_website(site_id):
+    site = db.get_or_404(Website, site_id)
+    if site.owner != current_user:
+        abort(403)
+
+    form = EditWebsiteForm(original_name=site.name, original_port=site.port, user_id=current_user.id)
+
+    if form.validate_on_submit():
+        original_site_path = get_site_base_path(site)
+        site.name = form.name.data
+        site.port = form.port.data
+        db.session.commit()
+
+        new_site_path = get_site_base_path(site)
+        if original_site_path != new_site_path:
+            try:
+                os.rename(original_site_path, new_site_path)
+            except OSError as e:
+                flash(f'Error renaming website folder: {e}', 'danger')
+                # Consider what to do here - maybe roll back the name change in the DB
+                # For now, we'll just flash the error.
+
+        flash(f'Website "{site.name}" updated successfully!', 'success')
+        return redirect(url_for('dashboard'))
+
+    form.name.data = site.name
+    form.port.data = site.port
+    return render_template('edit_website.html', form=form, site=site)
 
 # --- File Manager Routes ---
 
@@ -711,6 +801,31 @@ def paste_item(site_id, dest_path):
 
     return redirect(url_for('manage_files', site_id=site.id, path=dest_path))
 
+@app.route('/files/rename/<int:site_id>', methods=['POST'])
+@login_required
+def rename_item(site_id):
+    site = db.get_or_404(Website, site_id)
+    if site.owner != current_user:
+        abort(403)
+
+    old_path_relative = request.form.get('old_path')
+    new_name = request.form.get('new_name')
+
+    if not old_path_relative or not new_name or '..' in new_name or '/' in new_name:
+        flash('Invalid request or name.', 'danger')
+        return redirect(url_for('manage_files', site_id=site_id, path=os.path.dirname(old_path_relative) if old_path_relative else ''))
+
+    old_path_full = get_safe_path(site, old_path_relative)
+    new_path_full = get_safe_path(site, os.path.join(os.path.dirname(old_path_relative), new_name))
+
+    try:
+        os.rename(old_path_full, new_path_full)
+        flash(f'Renamed "{os.path.basename(old_path_relative)}" to "{new_name}".', 'success')
+    except Exception as e:
+        flash(f'Error renaming item: {e}', 'danger')
+
+    return redirect(url_for('manage_files', site_id=site_id, path=os.path.dirname(old_path_relative) if old_path_relative else ''))
+
 
 @app.route('/files/clear_clipboard/<int:site_id>', methods=['GET'], defaults={'current_path': ''})
 @app.route('/files/clear_clipboard/<int:site_id>/<path:current_path>', methods=['GET'])
@@ -718,6 +833,114 @@ def paste_item(site_id, dest_path):
 def clear_clipboard(site_id, current_path):
     session.pop('clipboard', None)
     return redirect(url_for('manage_files', site_id=site_id, path=current_path))
+
+@app.route('/website/stats/<int:site_id>')
+@login_required
+def website_stats(site_id):
+    site = db.get_or_404(Website, site_id)
+    if site.owner != current_user:
+        abort(403)
+
+    today = date.today()
+    
+    # Monthly and Yearly data
+    monthly_visits = db.session.query(
+        db.func.strftime('%Y-%m', Visitor.date).label('month'),
+        db.func.sum(Visitor.daily_visits).label('visits')
+    ).filter(
+        Visitor.website_id == site_id,
+        db.func.strftime('%Y', Visitor.date) == str(today.year)
+    ).group_by('month').order_by('month').all()
+
+    yearly_visits = db.session.query(
+        db.func.strftime('%Y', Visitor.date).label('year'),
+        db.func.sum(Visitor.daily_visits).label('visits')
+    ).filter(
+        Visitor.website_id == site_id
+    ).group_by('year').order_by('year').all()
+
+    monthly_labels = [row.month for row in monthly_visits]
+    monthly_data = [row.visits for row in monthly_visits]
+    
+    yearly_labels = [row.year for row in yearly_visits]
+    yearly_data = [row.visits for row in yearly_visits]
+
+    return jsonify({
+        'monthly': {
+            'labels': monthly_labels,
+            'data': monthly_data
+        },
+        'yearly': {
+            'labels': yearly_labels,
+            'data': yearly_data
+        }
+    })
+
+@app.route('/website/stats/<int:site_id>/hourly')
+@login_required
+def website_hourly_stats(site_id):
+    site = db.get_or_404(Website, site_id)
+    if site.owner != current_user:
+        abort(403)
+
+    today = date.today()
+    hourly_visits = db.session.query(
+        db.func.strftime('%H', VisitLog.timestamp).label('hour'),
+        db.func.count(VisitLog.id).label('visits')
+    ).filter(
+        VisitLog.website_id == site_id,
+        db.func.date(VisitLog.timestamp) == today
+    ).group_by('hour').order_by('hour').all()
+
+    hourly_labels = [f'{int(row.hour):02d}:00' for row in hourly_visits]
+    hourly_data = [row.visits for row in hourly_visits]
+
+    return jsonify({
+        'labels': hourly_labels,
+        'data': hourly_data
+    })
+
+@app.route('/website/stats/<int:site_id>/daily_unique')
+@login_required
+def website_daily_unique_stats(site_id):
+    site = db.get_or_404(Website, site_id)
+    if site.owner != current_user:
+        abort(403)
+
+    daily_unique_visits = db.session.query(
+        db.func.strftime('%Y-%m-%d', DailyUniqueVisitor.date).label('day'),
+        db.func.count(DailyUniqueVisitor.id).label('unique_visits')
+    ).filter(
+        DailyUniqueVisitor.website_id == site_id
+    ).group_by('day').order_by('day').all()
+
+    daily_labels = [row.day for row in daily_unique_visits]
+    daily_data = [row.unique_visits for row in daily_unique_visits]
+
+    return jsonify({
+        'labels': daily_labels,
+        'data': daily_data
+    })
+
+@app.route('/website/stats/<int:site_id>/logs')
+@login_required
+def website_visit_logs(site_id):
+    site = db.get_or_404(Website, site_id)
+    if site.owner != current_user:
+        abort(403)
+
+    # Fetch recent 100 visit logs for simplicity, order by timestamp descending
+    visit_logs = VisitLog.query.filter_by(website_id=site_id).order_by(VisitLog.timestamp.desc()).limit(100).all()
+
+    logs_data = []
+    for log in visit_logs:
+        logs_data.append({
+            'timestamp': log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            'ip_address': log.ip_address,
+            'country_code': log.country_code,
+            'country_name': log.country_name
+        })
+    return jsonify(logs_data)
 
 # -----------------------------------------------------------------------------
 # App Startup
@@ -765,7 +988,7 @@ def start_autostart_websites():
         for site in autostart_sites:
             print(f"Attempting to autostart '{site.name}' on port {site.port}...")
             site_path = get_site_base_path(site)
-            process = Process(target=websites.run_website, args=(site_path, site.port))
+            process = Process(target=websites.run_website, args=(site_path, site.port, site.id))
             process.start()
 
             site.process_id = process.pid
