@@ -63,7 +63,6 @@ ExecStart=/usr/local/bin/pwm.sh
 WorkingDirectory=$INSTALL_DIR
 # Run the service as the user who installed it, or specify a dedicated user
 User=$CURRENT_USER
-Group=$CURRENT_USER # Optional, but good practice
 StandardOutput=journal
 StandardError=journal
 Restart=always
