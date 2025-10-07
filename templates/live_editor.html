@@ -1,0 +1,417 @@
+{% extends "base.html" %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/dialog/dialog.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/theme/{{ theme }}.css">
+
+<style>
+    main.container { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+    .editor-wrapper { height: calc(100vh - 70px); display: flex; flex-direction: column; background-color: var(--color-background); }
+    .editor-toolbar { background-color: #010409; border-bottom: 1px solid var(--color-border); padding: 0.5rem 1.5rem; flex-shrink: 0; z-index: 10; }
+
+    .editor-container {
+        display: grid;
+        grid-template-columns: 1fr 6px 1fr;
+        flex-grow: 1;
+        overflow: hidden;
+        transition: grid-template-columns 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .code-panel, .preview-panel {
+        height: 100%;
+        overflow: auto;
+    }
+    .resizer {
+        cursor: ew-resize;
+        background-color: var(--color-border);
+        transition: background-color 0.2s;
+    }
+    .resizer:hover, .is-resizing .resizer { background-color: var(--color-primary); }
+
+    .is-resizing {
+        transition: none;
+    }
+
+    .editor-container.code-collapsed {
+        grid-template-columns: 0px 6px 1fr;
+    }
+    .editor-container.preview-collapsed {
+        grid-template-columns: 1fr 6px 0px;
+    }
+    .CodeMirror { height: 100%; background-color: #010409; }
+    .CodeMirror-gutters { background-color: #010409; border-right: 1px solid var(--color-border); }
+    .preview-iframe { width: 100%; height: 100%; border: none; background-color: #ffffff; }
+
+    .modal{display:none;position:fixed;z-index:1050;left:0;top:0;width:100%;height:100%;overflow:auto;background-color:rgba(0,0,0,.7);align-items:center;justify-content:center}.modal.show{display:flex}.modal-content{background-color:var(--color-surface);border:1px solid var(--color-border);border-radius:12px;box-shadow:0 20px 25px -5px rgba(0,0,0,.4);position:relative;display:flex;flex-direction:column;width:100%;max-width:500px;margin:1.75rem auto}.modal-header{display:flex;justify-content:space-between;align-items:center;padding:1rem 1.5rem;border-bottom:1px solid var(--color-border)}.modal-title{font-size:1.25rem;font-weight:600;color:var(--color-text-primary)}.btn-close{background:0 0;border:0;font-size:1.5rem;color:var(--color-text-secondary);cursor:pointer}.modal-body{position:relative;flex:1 1 auto;padding:1.5rem}.modal-footer{display:flex;justify-content:flex-end;align-items:center;padding:1rem 1.5rem;border-top:1px solid var(--color-border);gap:.5rem}.modal-sm .modal-content{max-width:380px}
+</style>
+
+<div class="editor-wrapper">
+    <div class="editor-toolbar flex justify-between items-center">
+        <h2 class="text-xl font-semibold text-white m-0">
+            <i class="bi bi-code-slash me-2 gradient-text"></i>
+            Live Editor: <span class="text-gray-400">{{ site.name }}</span>
+        </h2>
+        <div class="flex items-center space-x-2">
+            <button id="saveButton" class="btn btn-primary text-sm">Save All</button>
+            <div class="relative inline-block text-left">
+                 <button class="btn btn-secondary text-sm dropdown-toggle"><i class="bi bi-list"></i></button>
+                 <div class="dropdown-menu origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-gray-800 ring-1 ring-black ring-opacity-5 z-20 hidden">
+                    <div class="py-1">
+                        <button type="button" class="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700" data-toggle="modal" data-target="#historyModal">
+                            <i class="bi bi-clock-history me-2"></i> Change History
+                        </button>
+                        <hr class="border-gray-600 my-1">
+                        <a href="{{ url_for('dashboard') }}" class="block px-4 py-2 text-sm text-red-400 hover:bg-red-500 hover:text-white">
+                            <i class="bi bi-x-circle me-2"></i> Close Editor
+                        </a>
+                    </div>
+                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="editor-container">
+        <div class="code-panel">
+            <div class="flex border-b border-gray-700">
+                <button class="tab-btn active" data-tab="html">index.html</button>
+                <button class="tab-btn" data-tab="css">style.css</button>
+                <button class="tab-btn" data-tab="js">main.js</button>
+            </div>
+            <div id="html-editor-container" class="editor-instance">
+                <textarea id="html-editor" name="html_content">{{ content.html }}</textarea>
+            </div>
+            <div id="css-editor-container" class="editor-instance" style="display: none;">
+                <textarea id="css-editor" name="css_content">{{ content.css }}</textarea>
+            </div>
+            <div id="js-editor-container" class="editor-instance" style="display: none;">
+                <textarea id="js-editor" name="js_content">{{ content.js }}</textarea>
+            </div>
+        </div>
+        <div class="resizer" id="resizer"></div>
+        <div class="preview-panel">
+            <iframe class="preview-iframe" id="live-preview"></iframe>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="historyModal" tabindex="-1">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title" id="historyModalTitle"><i class="bi bi-clock-history me-2"></i> File History</h5>
+            <button type="button" class="btn-close" data-dismiss="modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="text-gray-400 text-sm mb-4">Select a backup to restore or delete a version.</p>
+            <div class="max-h-96 overflow-y-auto" id="history-log-container">
+                <ul class="space-y-2" id="historyList"></ul>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal modal-sm" id="deleteBackupConfirmModal" tabindex="-1">
+    <div class="modal-content">
+        <div class="modal-header" style="background-color: #3e2626; border-color: #6f4242;">
+            <h5 class="modal-title text-base"><i class="bi bi-exclamation-triangle-fill me-2"></i> Confirm Deletion</h5>
+            <button type="button" class="btn-close" data-dismiss="modal">&times;</button>
+        </div>
+        <form id="deleteBackupForm" method="POST" action="">
+            <div class="modal-body text-center">
+                <p class="text-gray-300">Delete backup from <strong id="deleteBackupTimestamp" class="text-white"></strong>?</p>
+                <p class="text-red-400 text-xs mt-2"><i class="bi bi-info-circle me-1"></i> This action cannot be undone.</p>
+                <input type="hidden" id="backupFileNameInput" name="backup_file">
+            </div>
+            <div class="modal-footer justify-center">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-secondary bg-red-500 hover:bg-red-600 text-white">Delete</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/search/search.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/dialog/dialog.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const activeModals={};function closeModal(e){if(e){e.classList.remove("show");if(e.id==="logsModal"&&logRefreshInterval)clearInterval(logRefreshInterval),logRefreshInterval=null;delete activeModals[e.id]}}document.querySelectorAll("[data-toggle=modal]").forEach(e=>{e.addEventListener("click",function(){const t=this.dataset.target.substring(1),o=document.getElementById(t);o&&(o.classList.add("show"),activeModals[t]=o)})}),document.querySelectorAll("[data-dismiss=modal]").forEach(e=>{e.addEventListener("click",function(){closeModal(this.closest(".modal"))})}),window.addEventListener("click",e=>{e.target.classList.contains("modal")&&closeModal(e.target)}),document.addEventListener("keydown",e=>{"Escape"===e.key&&Object.values(activeModals).forEach(closeModal)});
+        function showToast(e,t="info"){const o=document.getElementById("toast-container");if(o){const a={success:"green",danger:"red",warning:"yellow",info:"blue"},n=`bg-${a[t]||"gray"}-500`,i=`<div class="toast-element relative w-full p-4 text-white ${n} rounded-lg shadow-lg flex items-center justify-between" role="alert"><span>${e}</span><button type="button" class="ml-4 text-white" onclick="this.parentElement.remove()">&times;</button></div>`;o.insertAdjacentHTML("beforeend",i);const d=o.lastElementChild;setTimeout(()=>{d&&(d.style.transition="opacity 0.5s ease",d.style.opacity="0",setTimeout(()=>d.remove(),500))},5e3)}}
+        function formatSize(e){if(0===e)return"0 B";const t=1024,o=["B","KB","MB"];return parseFloat((e/Math.pow(t,Math.floor(Math.log(e)/Math.log(t)))).toFixed(1))+" "+o[Math.floor(Math.log(e)/Math.log(t))]}
+        function timeSince(e){let t=Math.floor((new Date-new Date(e))/1e3),o=t/31536e3;if(o>1)return Math.floor(o)+"y ago";if((o=t/2592e3)>1)return Math.floor(o)+"mo ago";if((o=t/86400)>1)return Math.floor(o)+"d ago";if((o=t/3600)>1)return Math.floor(o)+"h ago";if((o=t/60)>1)return Math.floor(o)+"m ago";return Math.floor(t)+"s ago"}
+
+        const siteId = {{ site.id }};
+        const editorContainer = document.querySelector('.editor-container');
+        const resizer = document.getElementById('resizer');
+        const previewIframe = document.getElementById('live-preview');
+        const saveButton = document.getElementById('saveButton');
+        const historyList = document.getElementById('historyList');
+        const deleteBackupForm = document.getElementById('deleteBackupForm');
+        let currentTab = 'html';
+
+        let lastGridLayout = '1fr 6px 1fr';
+
+        const onMouseMove = (e) => {
+            const containerRect = editorContainer.getBoundingClientRect();
+            let newCodeWidth = e.clientX - containerRect.left;
+
+            if (newCodeWidth < 50) newCodeWidth = 50;
+            if (newCodeWidth > containerRect.width - 56) newCodeWidth = containerRect.width - 56;
+
+            const newLayout = `${newCodeWidth}px 6px 1fr`;
+            editorContainer.style.gridTemplateColumns = newLayout;
+            lastGridLayout = newLayout;
+            editors[currentTab].refresh();
+        };
+
+        const onMouseUp = () => {
+            editorContainer.classList.remove('is-resizing');
+            previewIframe.style.pointerEvents = 'auto';
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        };
+
+        resizer.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            editorContainer.classList.add('is-resizing');
+            previewIframe.style.pointerEvents = 'none';
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+
+        const editors = {
+            html: CodeMirror.fromTextArea(document.getElementById("html-editor"), {
+                lineNumbers: true,
+                theme: "{{ theme }}",
+                mode: "htmlmixed",
+                extraKeys: { "Ctrl-F": "findPersistent" }
+            }),
+            css: CodeMirror.fromTextArea(document.getElementById("css-editor"), {
+                lineNumbers: true,
+                theme: "{{ theme }}",
+                mode: "css",
+                extraKeys: { "Ctrl-F": "findPersistent" }
+            }),
+            js: CodeMirror.fromTextArea(document.getElementById("js-editor"), {
+                lineNumbers: true,
+                theme: "{{ theme }}",
+                mode: "javascript",
+                extraKeys: { "Ctrl-F": "findPersistent" }
+            })
+        };
+
+        let updateTimer;
+
+        // REMOVED: previewIframe.onload = updatePreview;
+
+        function updatePreview() {
+            const doc = previewIframe.contentDocument;
+            const htmlContent = editors.html.getValue();
+            const cssContent = editors.css.getValue();
+            const jsContent = editors.js.getValue();
+
+            const baseUrl = `{{ url_for('live_edit_preview', site_id=site.id) }}/`;
+            const baseTag = `<base href="${baseUrl}">`;
+            const styleTag = `<style>${cssContent}</style>`;
+            const scriptTag = `<script>${jsContent}<\/script>`;
+
+            let updatedContent = htmlContent;
+
+            if (/<head/i.test(updatedContent)) {
+                updatedContent = updatedContent.replace(/(<head[^>]*>)/i, `$1${baseTag}${styleTag}`);
+            } else if (/<html/i.test(updatedContent)) {
+                updatedContent = updatedContent.replace(/(<html[^>]*>)/i, `$1<head>${baseTag}${styleTag}</head>`);
+            } else {
+                updatedContent = `<html><head>${baseTag}${styleTag}</head><body>${updatedContent}</body></html>`;
+            }
+            if (/<body/i.test(updatedContent)) {
+                 updatedContent = updatedContent.replace(/(<\/body[^>]*>)/i, `${scriptTag}$1`);
+            } else {
+                 updatedContent += scriptTag;
+            }
+
+            // CRITICAL RELIABILITY FIX: Wrap doc.write in try/catch for failproof rendering
+            try {
+                doc.open();
+                doc.write(updatedContent);
+                doc.close();
+            } catch (e) {
+                console.error("Live preview update failed:", e);
+                const errorHtml = `
+                    <html>
+                    <body style="background-color: #3e2626; color: #ff5555; padding: 20px; font-family: sans-serif; text-align: center;">
+                        <h2 style="font-weight: bold;"><i class="bi bi-exclamation-triangle-fill me-2"></i> Preview Failed to Render</h2>
+                        <p>The code you entered may be causing a critical error (e.g., an infinite script loop or malformed document). Check the browser console for details.</p>
+                    </body>
+                    </html>`;
+                try {
+                    doc.open();
+                    doc.write(errorHtml);
+                    doc.close();
+                } catch (innerE) {
+                    console.error("Failed to write error message to iframe:", innerE);
+                }
+            }
+        }
+
+        Object.values(editors).forEach(editor => {
+            setTimeout(() => editor.refresh(), 1);
+            editor.on("change", () => {
+                clearTimeout(updateTimer);
+                updateTimer = setTimeout(updatePreview, 500);
+            });
+        });
+
+        // RELIABILITY FIX: Manually trigger the initial preview update after a small delay
+        // to ensure CodeMirror has loaded the initial content into the text areas.
+        setTimeout(updatePreview, 100);
+
+        saveButton.addEventListener("click",()=>{
+            const payload = {
+                html_content: editors.html.getValue(),
+                css_content: editors.css.getValue(),
+                js_content: editors.js.getValue()
+            };
+
+            saveButton.disabled = true;
+            saveButton.innerHTML='<i class="bi bi-arrow-repeat animate-spin me-1"></i> Saving...',
+
+            fetch(`/website/live_edit/save/${siteId}`,{
+                method:"POST",
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(e=>e.json())
+            .then(e=>{
+                showToast(e.message,e.status);
+                if(e.status === 'success' && activeModals.historyModal) {
+                    loadHistory();
+                }
+            })
+            .finally(()=>{
+                saveButton.disabled = false;
+                saveButton.innerHTML='Save All';
+            })
+        });
+
+        function loadHistory(){
+            const fileMap = {
+                html: 'index.html',
+                css: 'style.css',
+                js: 'main.js'
+            };
+            const filename = fileMap[currentTab];
+            document.getElementById('historyModalTitle').innerText = `File History: ${filename}`;
+            historyList.innerHTML='<li class="text-center text-gray-500">Loading history...</li>',
+            fetch(`/website/live_edit/history/${siteId}/${filename}`)
+            .then(e=>e.json()).then(e=>{
+                historyList.innerHTML="";
+                if (0===e.length) {
+                    historyList.innerHTML='<li class="text-center text-gray-500 p-4">No change history found.</li>';
+                    return;
+                }
+                e.forEach(e=>{
+                    historyList.insertAdjacentHTML("beforeend",`
+                        <li class="flex justify-between items-center p-3 bg-gray-800 rounded-md border border-gray-700">
+                            <div>
+                                <div class="font-semibold text-white">${e.display}</div>
+                                <div class="text-xs text-gray-400">${timeSince(e.timestamp)} &bull; ${formatSize(e.size_bytes)}</div>
+                            </div>
+                            <div class="space-x-2">
+                                <button class="btn btn-primary text-xs py-1 px-2 restore-btn" data-backup-name="${e.name}">Restore</button>
+                                <button class="btn btn-secondary bg-red-500 hover:bg-red-600 text-white text-xs py-1 px-2 delete-btn" data-backup-name="${e.name}" data-display-timestamp="${e.display}">Delete</button>
+                            </div>
+                        </li>`)
+                })
+            })
+        }
+        document.querySelector('[data-target="#historyModal"]').addEventListener("click",loadHistory);
+
+        historyList.addEventListener("click",e=>{
+            const t=e.target.closest("button");
+            if(t){
+                const o=t.dataset.backupName;
+                const fileMap = {html: 'index.html', css: 'style.css', js: 'main.js'};
+                const filename = fileMap[currentTab];
+
+                if(t.classList.contains("restore-btn")){
+                    if(!confirm(`Are you sure you want to restore this version of ${filename}?\n\nA backup of your current work will be made first.`))return;
+                    const a=new FormData;
+                    a.append("backup_file",o);
+                    a.append("file_name", filename);
+                    fetch(`/website/live_edit/restore/${siteId}`,{method:"POST",body:a})
+                    .then(e=>e.json())
+                    .then(e=>{
+                        showToast(e.message,e.status);
+                        if ("success"===e.status || "warning"===e.status) {
+                            editors[currentTab].setValue(e.content);
+                            // CRITICAL FIX: Update preview immediately after successful restore
+                            updatePreview();
+                            loadHistory();
+                            closeModal(document.getElementById("historyModal"));
+                        }
+                    })
+                } else if (t.classList.contains("delete-btn")) {
+                    document.getElementById("deleteBackupTimestamp").textContent=t.dataset.displayTimestamp;
+                    document.getElementById("backupFileNameInput").value=o;
+                    openModal("#deleteBackupConfirmModal");
+                }
+            }
+        });
+
+        deleteBackupForm.addEventListener("submit",e=>{
+            e.preventDefault();
+            const t=new FormData(deleteBackupForm);
+            fetch(`/website/live_edit/delete_backup/${siteId}`,{method:"POST",body:t})
+            .then(e=>e.json())
+            .then(e=>{showToast(e.message,e.status),loadHistory()})
+            .finally(()=>closeModal(document.getElementById("deleteBackupConfirmModal")));
+        });
+
+        // Tab switching logic
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                currentTab = tab;
+
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                document.querySelectorAll('.editor-instance').forEach(editor => editor.style.display = 'none');
+                document.getElementById(`${tab}-editor-container`).style.display = 'block';
+                editors[tab].refresh();
+            });
+        });
+    });
+</script>
+<style>
+    .tab-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        background-color: transparent;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        transition: color 0.2s, border-bottom-color 0.2s;
+        border-bottom: 2px solid transparent;
+    }
+    .tab-btn.active {
+        color: var(--color-primary);
+        border-bottom-color: var(--color-primary);
+    }
+    .editor-instance {
+        height: calc(100% - 42px); /* Adjust based on tab height */
+    }
+</style>
+{% endblock %}

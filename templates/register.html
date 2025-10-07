@@ -1,47 +1,75 @@
-<!-- templates/register.html -->
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-body">
-                <h2 class="card-title text-center">Register</h2>
-                <form method="POST" action="">
-                    {{ form.hidden_tag() }}
-                    <div class="mb-3">
-                        {{ form.username.label(class="form-label") }}
-                        {{ form.username(class="form-control") }}
-                        {% if form.username.errors %}
-                            <div class="invalid-feedback d-block">
-                                {% for error in form.username.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    <div class="mb-3">
-                        {{ form.password.label(class="form-label") }}
-                        {{ form.password(class="form-control") }}
-                    </div>
-                    <div class="mb-3">
-                        {{ form.confirm_password.label(class="form-label") }}
-                        {{ form.confirm_password(class="form-control") }}
-                        {% if form.confirm_password.errors %}
-                            <div class="invalid-feedback d-block">
-                                {% for error in form.confirm_password.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    <div class="d-grid">
-                        {{ form.submit(class="btn btn-primary") }}
-                    </div>
-                </form>
-            </div>
-            <div class="card-footer text-center">
-                <small class="text-muted">
-                    Already have an account? <a href="{{ url_for('login') }}">Log In</a>
-                </small>
-            </div>
+<style>
+    .form-input {
+        background-color: var(--color-surface);
+        border: 1px solid var(--color-border);
+        color: var(--color-text-primary);
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .form-input:focus {
+        outline: none;
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+    }
+    .form-container {
+        background-color: #010409;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    }
+    .invalid-feedback {
+        color: #ff5555; /* A bright red for error messages */
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+</style>
+
+<div class="flex items-center justify-center min-h-[calc(100vh-250px)]">
+    <div class="w-full max-w-md p-8 space-y-8 form-container">
+        <div>
+            <h2 class="mt-6 text-center text-3xl font-extrabold text-white">
+                Create a new account
+            </h2>
         </div>
+        <form class="mt-8 space-y-6" method="POST" action="">
+            {{ form.hidden_tag() }}
+            <div class="rounded-md shadow-sm">
+                <div class="mb-4">
+                    {{ form.username.label(class="block text-sm font-medium text-gray-400 mb-2") }}
+                    {{ form.username(class="form-input appearance-none rounded-md relative block w-full px-3 py-2 placeholder-gray-500 focus:outline-none focus:z-10 sm:text-sm") }}
+                    {% if form.username.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.username.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="mb-4">
+                    {{ form.password.label(class="block text-sm font-medium text-gray-400 mb-2") }}
+                    {{ form.password(class="form-input appearance-none rounded-md relative block w-full px-3 py-2 placeholder-gray-500 focus:outline-none focus:z-10 sm:text-sm") }}
+                </div>
+                <div class="mb-6">
+                    {{ form.confirm_password.label(class="block text-sm font-medium text-gray-400 mb-2") }}
+                    {{ form.confirm_password(class="form-input appearance-none rounded-md relative block w-full px-3 py-2 placeholder-gray-500 focus:outline-none focus:z-10 sm:text-sm") }}
+                     {% if form.confirm_password.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.confirm_password.errors %}{{ error }}{% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div>
+                {{ form.submit(class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white btn-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-primary") }}
+            </div>
+
+            <div class="text-sm text-center mt-4">
+                <a href="{{ url_for('login') }}" class="font-medium text-primary hover:text-secondary">
+                    Already have an account?
+                </a>
+            </div>
+        </form>
     </div>
 </div>
 {% endblock %}

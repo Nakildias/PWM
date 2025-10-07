@@ -1,201 +1,656 @@
 {% extends "base.html" %}
 
 {% block content %}
-<nav aria-label="breadcrumb">
-    <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
-        <li class="breadcrumb-item active" aria-current="page">{{ site.name }} - File Manager</li>
-    </ol>
-</nav>
+<style>
+    /* Retaining essential functional styles */
+    .file-row:hover {
+        background-color: #2a3038;
+    }
+    .folder-drop-zone.drag-enter,
+    .parent-dir-drop-zone.drag-enter {
+        background-color: rgba(88, 166, 255, 0.1) !important;
+        box-shadow: inset 0 0 10px 2px var(--color-primary);
+    }
 
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">File Manager: {{ site.name }}</h1>
-    <div class="btn-toolbar mb-2 mb-md-0">
-        <button type="button" class="btn btn-sm btn-outline-primary me-2" data-bs-toggle="modal" data-bs-target="#uploadFileModal">
-            <i class="bi bi-upload"></i> Upload File
+    /* Modal Styling */
+    .modal {
+        display: none; /* Hidden by default */
+        position: fixed;
+        z-index: 1050;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0,0,0,0.7);
+        align-items: center;
+        justify-content: center;
+    }
+    .modal.show {
+        display: flex;
+    }
+    .modal-content {
+        background-color: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 500px;
+        margin: 1.75rem auto;
+    }
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--color-border);
+    }
+    .modal-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+    }
+    .btn-close {
+        background: transparent;
+        border: 0;
+        font-size: 1.5rem;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+    }
+    .modal-body {
+        position: relative;
+        flex: 1 1 auto;
+        padding: 1.5rem;
+    }
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--color-border);
+        gap: 0.5rem;
+    }
+    .modal-sm .modal-content {
+        max-width: 300px;
+    }
+    .modal-lg .modal-content {
+        max-width: 800px;
+    }
+
+    /* Full Screen Drop Zone Overlay */
+    #fullScreenDropOverlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(13, 17, 23, 0.85);
+        z-index: 1070;
+        display: none;
+        place-content: center;
+        text-align: center;
+        border: 5px dashed var(--color-primary);
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+        opacity: 0;
+    }
+    #fullScreenDropOverlay.active {
+        display: grid;
+        opacity: 1;
+        pointer-events: auto;
+    }
+    #fullScreenDropOverlay .drop-message {
+        color: white;
+        font-size: 2.5rem;
+        font-weight: bold;
+        padding: 2rem;
+        border-radius: 1rem;
+        background-color: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(5px);
+    }
+
+    .form-input {
+        background-color: #010409;
+        border: 1px solid var(--color-border);
+        color: var(--color-text-primary);
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .form-input:focus {
+        outline: none;
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+    }
+
+/* --- Corrected CSS for Image Preview Modal --- */
+
+/* 1. Set a large, static frame for the modal */
+#imagePreviewModal .modal-content {
+    width: 90vw;
+    max-width: 1200px; /* Max pixel width for very large screens */
+    height: 90vh;
+    /* This ensures the header and body stack vertically */
+    display: flex;
+    flex-direction: column;
+}
+
+/* 2. Make the body fill the available space and prevent overflow */
+#imagePreviewModal .modal-body {
+    flex-grow: 1; /* Allow the body to fill the available vertical space */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+
+    /* ---- THE CRUCIAL FIX IS HERE ---- */
+    /* This tells the flex item that it's allowed to shrink smaller than its
+       content's natural minimum height, which solves the overflow problem. */
+    min-height: 0;
+}
+
+/* 3. Ensure the image itself scales to fit inside the body */
+#imagePreviewModal #previewImage {
+    /* The image must not exceed the dimensions of its container (.modal-body) */
+    max-width: 100%;
+    max-height: 100%;
+    /* Let the browser handle sizing to maintain aspect ratio */
+    width: auto;
+    height: auto;
+    object-fit: contain; /* Explicitly contain the image within its bounds */
+}
+</style>
+
+<div class="flex items-center justify-between pb-4 mb-4 border-b border-gray-700">
+    <div>
+        <h1 class="text-4xl font-bold gradient-text"><i class="bi bi-folder-fill me-2"></i> File Manager</h1>
+        <p class="text-lg text-gray-400 mt-1">{{ site.name }}</p>
+    </div>
+    <div class="flex space-x-2">
+        <button type="button" class="btn btn-primary" data-toggle="modal" data-target="#uploadFileModal">
+            <i class="bi bi-upload"></i> Upload
         </button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#createFolderModal">
-            <i class="bi bi-folder-plus"></i> Create Folder
+        <button type="button" class="btn btn-secondary" data-toggle="modal" data-target="#createFileModal">
+            <i class="bi bi-file-earmark-plus"></i> New File
+        </button>
+        <button type="button" class="btn btn-secondary" data-toggle="modal" data-target="#createFolderModal">
+            <i class="bi bi-folder-plus"></i> New Folder
         </button>
     </div>
 </div>
 
-<h4>Path: /{{ current_path }}</h4>
+<h4 class="text-lg font-normal text-gray-400 mb-3">Current Path: /{{ current_path }}</h4>
 
 {% if session.get('clipboard') %}
-<div class="alert alert-info d-flex justify-content-between align-items-center">
+<div class="bg-gray-800 border border-gray-700 rounded-lg p-3 mb-4 flex justify-between items-center text-blue-300">
     <span>
         Clipboard:
-        <strong>{{ session['clipboard']['action'].capitalize() }}</strong>
+        <strong class="font-semibold">{{ session['clipboard']['action'].capitalize() }}</strong>
         "{{ session['clipboard']['source_name'] }}"
     </span>
     <div>
-        <a href="{{ url_for('paste_item', site_id=site.id, dest_path=current_path) }}" class="btn btn-sm btn-primary"><i class="bi bi-clipboard-plus"></i> Paste Here</a>
-        <a href="{{ url_for('clear_clipboard', site_id=site.id, current_path=current_path) }}" class="btn btn-sm btn-secondary"><i class="bi bi-x-circle"></i> Clear</a>
+        <a href="{{ url_for('paste_item', site_id=site.id, dest_path=current_path) }}" class="btn btn-primary text-xs py-1 px-2 me-2"><i class="bi bi-clipboard-plus"></i> Paste Here</a>
+        <a href="{{ url_for('clear_clipboard', site_id=site.id, current_path=current_path) }}" class="btn btn-secondary text-xs py-1 px-2"><i class="bi bi-x-circle"></i> Clear</a>
     </div>
 </div>
 {% endif %}
 
+{% set image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'] %}
+{% set editable_extensions = ['html', 'htm', 'js', 'css', 'txt', 'config', 'json', 'xml', 'md', 'yaml', 'yml', 'py', 'ts', 'jsx', 'tsx'] %}
 
-<div class="table-responsive">
-    <table class="table table-striped">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Size</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% if current_path %}
-            <tr>
-                <td><a href="{{ url_for('manage_files', site_id=site.id, path=parent_path) }}"><i class="bi bi-arrow-return-left"></i> ..</a></td>
-                <td>Parent Directory</td>
-                <td></td>
-                <td></td>
-            </tr>
-            {% endif %}
-            {% for item in items %}
-            <tr>
-                <td>
-                    {% if item.is_dir %}
-                        <i class="bi bi-folder-fill text-warning"></i>
-                        <a href="{{ url_for('manage_files', site_id=site.id, path=item.path) }}">{{ item.name }}</a>
-                    {% else %}
-                        <i class="bi bi-file-earmark-text"></i> {{ item.name }}
-                    {% endif %}
-                </td>
-                <td>{{ 'Directory' if item.is_dir else 'File' }}</td>
-                <td>{{ item.size if not item.is_dir else '' }}</td>
-                <td>
-                    <div class="btn-group" role="group" aria-label="File actions">
-                        {% if not item.is_dir %}
-                        <a href="{{ url_for('download_file', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-success" title="Download"><i class="bi bi-download"></i></a>
-                        <a href="{{ url_for('edit_file', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-primary" title="Edit"><i class="bi bi-pencil-square"></i></a>
+<div id="fileManagerContainer" class="bg-gray-900 border border-gray-700 rounded-lg shadow-lg">
+    <div>
+        <table class="min-w-full text-sm text-left text-gray-400">
+            <thead class="text-xs text-gray-300 uppercase bg-gray-900">
+                <tr>
+                    <th scope="col" class="px-6 py-3">Name</th>
+                    <th scope="col" class="px-6 py-3 w-1/5">Type</th>
+                    <th scope="col" class="px-6 py-3 w-1/6">Size</th>
+                    <th scope="col" class="px-6 py-3 w-1/6 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if current_path %}
+                <tr class="file-row parent-dir-drop-zone border-b border-gray-700" data-dest-path="{{ parent_path }}">
+                    <td class="px-6 py-3"><a href="{{ url_for('manage_files', site_id=site.id, path=parent_path) }}" class="text-blue-400 font-semibold hover:underline"><i class="bi bi-arrow-return-left me-2"></i> ..</a></td>
+                    <td>Parent Directory</td><td></td><td></td>
+                </tr>
+                {% endif %}
+                {% for item in items %}
+                <tr class="file-row {% if item.is_dir %}folder-drop-zone{% endif %} border-b border-gray-700"
+                    {% if not item.is_dir %} draggable="true" data-item-path="{{ item.path }}" data-item-name="{{ item.name }}" {% endif %}
+                    data-dest-path="{% if item.is_dir %}{{ item.path }}{% else %}{{ current_path }}{% endif %}">
+                    <td class="px-6 py-3 font-medium text-white">
+                        {% set file_extension = item.name.split('.')[-1] | lower %}
+                        {% if item.is_dir %}
+                            <i class="bi bi-folder-fill text-yellow-400 me-2"></i><a href="{{ url_for('manage_files', site_id=site.id, path=item.path) }}" class="hover:underline">{{ item.name }}</a>
+                        {% elif file_extension in image_extensions %}
+                            <i class="bi bi-file-earmark-image me-2"></i><a href="#" class="hover:underline image-preview-link" data-toggle="modal" data-target="#imagePreviewModal" data-file-path="{{ item.path }}" data-file-name="{{ item.name }}">{{ item.name }}</a>
+                        {% elif file_extension in editable_extensions %}
+                            <i class="bi bi-file-earmark-code me-2"></i><a href="{{ url_for('edit_file', site_id=site.id, path=item.path) }}" class="hover:underline">{{ item.name }}</a>
+                        {% else %}
+                            <i class="bi bi-file-earmark me-2"></i> {{ item.name }}
                         {% endif %}
-                        <button type="button" class="btn btn-sm btn-outline-warning rename-btn"
-                                data-bs-toggle="modal"
-                                data-bs-target="#renameItemModal"
-                                data-item-path="{{ item.path }}"
-                                data-item-name="{{ item.name }}"
-                                title="Rename">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <a href="{{ url_for('copy_item', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-secondary" title="Copy"><i class="bi bi-clipboard"></i></a>
-                        <a href="{{ url_for('cut_item', site_id=site.id, path=item.path) }}" class="btn btn-sm btn-outline-info" title="Cut"><i class="bi bi-scissors"></i></a>
-
-                        <form action="{{ url_for('delete_item', site_id=site.id, path=item.path) }}" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete {{ item.name }}?');">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
-                        </form>
-                    </div>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="4" class="text-center">This directory is empty.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-<!-- All Modals -->
-<div class="modal fade" id="uploadFileModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Upload File</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form action="{{ url_for('upload_file', site_id=site.id, path=current_path) }}" method="post" enctype="multipart/form-data">
-                <div class="modal-body">
-                    <input type="file" name="file" class="form-control" required>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="submit" class="btn btn-primary">Upload</button>
-                </div>
-            </form>
-        </div>
+                    </td>
+                    <td class="px-6 py-3">{{ 'Directory' if item.is_dir else 'File' }}</td>
+                    <td class="px-6 py-3">{{ item.size if not item.is_dir else '' }}</td>
+                    <td class="px-6 py-3 text-right">
+                        <div class="relative inline-block text-left">
+                            <button class="btn btn-secondary text-xs py-1 px-2 dropdown-toggle"><i class="bi bi-three-dots-vertical"></i></button>
+                            <div class="dropdown-menu origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-gray-800 ring-1 ring-black ring-opacity-5 z-20 hidden">
+                                <div class="py-1">
+                                    {% if not item.is_dir %}
+                                    <a href="{{ url_for('edit_file', site_id=site.id, path=item.path) }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"><i class="bi bi-pencil-square me-2"></i> Edit</a>
+                                    <a href="{{ url_for('download_file', site_id=site.id, path=item.path) }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"><i class="bi bi-download me-2"></i> Download</a>
+                                    <hr class="border-gray-600 my-1">
+                                    {% endif %}
+                                    <button data-toggle="modal" data-target="#renameItemModal" data-item-path="{{ item.path }}" data-item-name="{{ item.name }}" class="rename-btn block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"><i class="bi bi-pencil me-2"></i> Rename</button>
+                                    <a href="{{ url_for('copy_item', site_id=site.id, path=item.path) }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"><i class="bi bi-clipboard me-2"></i> Copy</a>
+                                    <a href="{{ url_for('cut_item', site_id=site.id, path=item.path) }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"><i class="bi bi-scissors me-2"></i> Cut</a>
+                                    <hr class="border-gray-600 my-1">
+                                    <button data-toggle="modal" data-target="#deleteConfirmModal" data-item-path="{{ item.path }}" data-item-name="{{ item.name }}" class="delete-btn block w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500 hover:text-white"><i class="bi bi-trash me-2"></i> Delete</button>
+                                </div>
+                            </div>
+                        </div>
+                        </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
-<div class="modal fade" id="createFolderModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Create Folder</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form action="{{ url_for('create_folder', site_id=site.id, path=current_path) }}" method="post">
-                <div class="modal-body">
-                    <input type="text" name="folder_name" class="form-control" placeholder="New Folder Name" required>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="submit" class="btn btn-primary">Create</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="renameItemModal" tabindex="-1" aria-labelledby="renameItemModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
+<div class="modal" id="uploadFileModal" tabindex="-1">
     <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="renameItemModalLabel">Rename Item</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <form id="renameForm" method="POST" action="{{ url_for('rename_item', site_id=site.id) }}">
-          <div class="modal-body">
-                <div class="mb-3">
-                    <label for="new_name" class="form-label">New Name</label>
-                    <input type="text" id="new_name" name="new_name" class="form-control" required>
-                    <input type="hidden" id="old_path" name="old_path">
-                </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            <button type="submit" class="btn btn-primary">Rename</button>
-          </div>
-      </form>
+        <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-upload me-2"></i> Upload File(s)</h5>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close">&times;</button>
+        </div>
+        <form action="{{ url_for('upload_file', site_id=site.id, path=current_path) }}" method="post" enctype="multipart/form-data">
+            <div class="modal-body">
+                <input type="file" name="files" class="form-input w-full p-2 rounded-md" multiple required>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary">Upload</button>
+            </div>
+        </form>
     </div>
-  </div>
 </div>
+
+<div class="modal" id="createFileModal" tabindex="-1">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-file-earmark-plus me-2"></i> Create Empty File</h5>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close">&times;</button>
+        </div>
+        <form action="{{ url_for('create_file', site_id=site.id, path=current_path) }}" method="post">
+            <div class="modal-body">
+                <input type="text" name="file_name" class="form-input w-full p-2 rounded-md" placeholder="new_file.html" required>
+                <small class="text-gray-500 mt-1 block">Include the full filename and extension.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary">Create File</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="createFolderModal" tabindex="-1">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-folder-plus me-2"></i> Create Folder</h5>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close">&times;</button>
+        </div>
+        <form action="{{ url_for('create_folder', site_id=site.id, path=current_path) }}" method="post">
+            <div class="modal-body">
+                <input type="text" name="folder_name" class="form-input w-full p-2 rounded-md" placeholder="New Folder Name" required>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="renameItemModal" tabindex="-1">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title" id="renameItemModalLabel"><i class="bi bi-pencil me-2"></i> Rename Item</h5>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close">&times;</button>
+        </div>
+        <form id="renameForm" method="POST" action="{{ url_for('rename_item', site_id=site.id) }}">
+            <div class="modal-body">
+                <label for="new_name" class="block text-sm font-medium text-gray-400 mb-2">New Name</label>
+                <input type="text" id="new_name" name="new_name" class="form-input w-full p-2 rounded-md" required>
+                <input type="hidden" id="old_path" name="old_path">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-primary">Rename</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal modal-sm" id="deleteConfirmModal" tabindex="-1">
+    <div class="modal-content">
+        <div class="modal-header" style="background-color: #3e2626; border-bottom: 1px solid #6f4242;">
+            <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill me-2"></i> Confirm Deletion</h5>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close">&times;</button>
+        </div>
+        <form id="deleteForm" method="POST" action="">
+            <div class="modal-body text-center">
+                <p class="mb-3">Are you sure you want to delete <strong id="deleteItemName"></strong>?</p>
+                <p class="text-red-400 text-xs"><i class="bi bi-info-circle me-1"></i> This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer justify-center">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-secondary bg-red-500 hover:bg-red-600 text-white"><i class="bi bi-trash me-1"></i> Delete</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal modal-sm" id="moveConfirmModal" tabindex="-1">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-box-arrow-in-right me-2"></i> Confirm Move</h5>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body text-center">
+            <p>Move <strong id="moveItemName"></strong> to <strong id="moveDestName"></strong>?</p>
+        </div>
+        <div class="modal-footer justify-center">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+            <button type="button" id="confirmMoveButton" class="btn btn-primary">Move Item</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal modal-lg" id="imagePreviewModal" tabindex="-1">
+    <div class="modal-content" style="background-color: #010409;">
+        <div class="modal-header">
+            <h5 class="modal-title" id="imagePreviewModalLabel">Image Preview</h5>
+            <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body text-center">
+            <img id="previewImage" src="" alt="Image Preview" class="max-w-full h-auto rounded-lg">
+        </div>
+    </div>
+</div>
+
+<div id="fullScreenDropOverlay">
+    <div class="drop-message">
+        <i class="bi bi-cloud-arrow-up-fill me-3"></i> Drop file(s) to upload
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    console.log("file_manager.html script started."); // Added for debugging
-    const renameModal = document.getElementById('renameItemModal');
-    if (renameModal) {
-        renameModal.addEventListener('show.bs.modal', function (event) {
-            const button = event.relatedTarget;
-            const itemPath = button.getAttribute('data-item-path');
-            const itemName = button.getAttribute('data-item-name');
+    // --- Custom Modal Logic ---
+    const modalTriggers = document.querySelectorAll('[data-toggle="modal"]');
+    const modalDismisses = document.querySelectorAll('[data-dismiss="modal"]');
 
-            const newNameInput = renameModal.querySelector('#new_name');
-            const oldPathInput = renameModal.querySelector('#old_path');
-            const modalTitle = renameModal.querySelector('.modal-title');
+    function openModal(targetId) {
+        const modal = document.getElementById(targetId.substring(1));
+        if (modal) modal.classList.add('show');
+    }
 
-            console.log('Rename Modal - itemPath:', itemPath); // Debugging
-            console.log('Rename Modal - itemName:', itemName); // Debugging
+    function closeModal(modalElement) {
+        if (modalElement) modalElement.classList.remove('show');
+    }
 
-            modalTitle.textContent = 'Rename "' + (itemName || '') + '"';
-            newNameInput.value = itemName || ''; // Ensure it's not null/undefined
-            oldPathInput.value = itemPath || ''; // Ensure it's not null/undefined
+    modalTriggers.forEach(trigger => {
+        trigger.addEventListener('click', () => openModal(trigger.dataset.target));
+    });
+
+    modalDismisses.forEach(dismiss => {
+        dismiss.addEventListener('click', () => closeModal(dismiss.closest('.modal')));
+    });
+
+    window.addEventListener('click', (event) => {
+        if (event.target.classList.contains('modal')) {
+            closeModal(event.target);
+        }
+    });
+
+    // --- Original PWM JavaScript (with minor adaptations) ---
+    const currentSiteId = {{ site.id }};
+    const currentPath = "{{ current_path }}";
+    const renameModalEl = document.getElementById('renameItemModal');
+    const deleteConfirmModalEl = document.getElementById('deleteConfirmModal');
+    const imagePreviewModalEl = document.getElementById('imagePreviewModal');
+    const moveConfirmModalEl = document.getElementById('moveConfirmModal');
+    const confirmMoveButton = document.getElementById('confirmMoveButton');
+
+    let dragSourceEl = null;
+    let dropTargetData = {};
+    let dragCounter = 0;
+
+    function showToast(message, category) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const colorMap = {'success': 'green', 'danger': 'red', 'warning': 'yellow', 'info': 'blue'};
+        const bgColor = `bg-${colorMap[category] || 'gray'}-500`;
+        const toastHtml = `
+            <div class="toast-element relative w-full p-4 text-white ${bgColor} rounded-lg shadow-lg flex items-center justify-between" role="alert">
+              <span>${message}</span>
+              <button type="button" class="ml-4 -mr-2 -my-2 text-white" onclick="this.parentElement.remove()">&times;</button>
+            </div>`;
+        container.insertAdjacentHTML('beforeend', toastHtml);
+        const newToast = container.lastElementChild;
+        setTimeout(() => {
+            newToast.style.transition = 'opacity 0.5s ease';
+            newToast.style.opacity = '0';
+            setTimeout(() => newToast.remove(), 500);
+        }, 5000);
+    }
+
+    // --- Rename Modal Logic ---
+    document.querySelectorAll('.rename-btn').forEach(button => {
+        button.addEventListener('click', function (event) {
+            const itemPath = this.getAttribute('data-item-path');
+            const itemName = this.getAttribute('data-item-name');
+            renameModalEl.querySelector('#new_name').value = itemName || '';
+            renameModalEl.querySelector('#old_path').value = itemPath || '';
+            renameModalEl.querySelector('.modal-title').innerHTML = `<i class="bi bi-pencil me-2"></i> Rename "${itemName || ''}"`;
         });
+    });
 
-        // Clear inputs when modal is hidden
-        renameModal.addEventListener('hidden.bs.modal', function () {
-            renameModal.querySelector('#new_name').value = '';
-            renameModal.querySelector('#old_path').value = '';
+    // --- Delete Confirmation Modal Logic ---
+     document.querySelectorAll('.delete-btn').forEach(button => {
+        button.addEventListener('click', function (event) {
+            const itemPath = this.getAttribute('data-item-path');
+            const itemName = this.getAttribute('data-item-name');
+            const deleteForm = deleteConfirmModalEl.querySelector('#deleteForm');
+            const deleteUrl = "{{ url_for('delete_item', site_id=site.id, path='PLACEHOLDER') }}".replace('PLACEHOLDER', itemPath);
+            deleteForm.action = deleteUrl;
+            deleteConfirmModalEl.querySelector('#deleteItemName').textContent = itemName;
         });
-    } else {
-        console.error('Rename modal element not found!');
+    });
+
+// --- Image Preview Modal Logic ---
+document.querySelectorAll('.image-preview-link').forEach(link => {
+    link.addEventListener('click', function(event) {
+        event.preventDefault();
+        const filePath = this.getAttribute('data-file-path');
+        const fileName = this.getAttribute('data-file-name');
+        const previewImage = imagePreviewModalEl.querySelector('#previewImage');
+
+        // ---- FIX: Clear the previous image source ----
+        previewImage.src = '';
+        // ---------------------------------------------
+
+        const imageUrl = "{{ url_for('download_file', site_id=site.id, path='PLACEHOLDER') }}".replace('PLACEHOLDER', filePath);
+
+        previewImage.src = imageUrl;
+        imagePreviewModalEl.querySelector('.modal-title').textContent = `Preview: ${fileName}`;
+    });
+});
+
+    // --- Core Move Function ---
+    async function executeMove(sourcePath, destPath, sourceEl) {
+        const baseUrl = "{{ url_for('paste_item', site_id=site.id) }}";
+        const fetchUrl = destPath ? `${baseUrl}/${destPath}` : baseUrl;
+        try {
+            const response = await fetch(fetchUrl, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: JSON.stringify({source_path: sourcePath, action: 'cut'})
+            });
+            let data = await response.json();
+            if (!response.ok || data.status === 'danger') {
+                showToast(data.message || `Move failed.`, 'danger'); return;
+            }
+            showToast(data.message, data.status);
+            if (data.status === 'success') {
+                if (sourceEl) sourceEl.remove();
+            }
+        } catch (error) {
+            showToast('Failed to move item due to a network error.', 'danger');
+        }
+    }
+
+    // --- Move Confirmation Modal Logic ---
+    confirmMoveButton.addEventListener('click', function() {
+        const { sourcePath, destPath, sourceEl } = dropTargetData;
+        if (sourcePath && sourceEl && (destPath !== null && destPath !== undefined)) {
+            executeMove(sourcePath, destPath, sourceEl);
+            dropTargetData = {};
+            closeModal(moveConfirmModalEl);
+        } else {
+            showToast('Move data is missing. Please try again.', 'danger');
+            closeModal(moveConfirmModalEl);
+        }
+    });
+
+    // --- Drag and Drop Logic ---
+    const dropOverlay = document.getElementById('fullScreenDropOverlay');
+    document.addEventListener('dragenter', handleDragEnterDocument);
+    document.addEventListener('dragleave', handleDragLeaveDocument);
+    document.addEventListener('dragover', handleDragOverDocument);
+    dropOverlay.addEventListener('drop', handleFileDrop);
+
+    function handleDragEnterDocument(e) {
+        const isFileDrag = e.dataTransfer.items && Array.from(e.dataTransfer.items).some(i => i.kind === 'file');
+        if (isFileDrag) e.preventDefault();
+        if (dragSourceEl || !isFileDrag) return;
+        dragCounter++;
+        if (dragCounter === 1) dropOverlay.classList.add('active');
+    }
+    function handleDragLeaveDocument(e) {
+        const isFileDrag = e.dataTransfer.items && Array.from(e.dataTransfer.items).some(i => i.kind === 'file');
+        if (isFileDrag) e.preventDefault();
+        if (dragSourceEl || !isFileDrag) return;
+        setTimeout(() => {
+            dragCounter--;
+            if (dragCounter <= 0) {
+                dragCounter = 0;
+                dropOverlay.classList.remove('active');
+            }
+        }, 50);
+    }
+    function handleDragOverDocument(e) {
+        e.preventDefault();
+        if (!dragSourceEl && e.dataTransfer.items && Array.from(e.dataTransfer.items).some(i => i.kind === 'file')) {
+             e.dataTransfer.dropEffect = 'copy';
+        }
+    }
+
+    document.querySelectorAll('.folder-drop-zone, .parent-dir-drop-zone').forEach(el => {
+        el.addEventListener('dragenter', handleDragEnter);
+        el.addEventListener('dragleave', handleDragLeave);
+        el.addEventListener('dragover', handleDragOver);
+        el.addEventListener('drop', handleItemDrop);
+    });
+
+    document.querySelectorAll('[draggable="true"]').forEach(el => {
+        el.addEventListener('dragstart', handleDragStart);
+    });
+
+    function handleDragStart(e) {
+        dragSourceEl = this;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', dragSourceEl.getAttribute('data-item-path'));
+        this.classList.add('opacity-50');
+    }
+
+    document.addEventListener('dragend', function(e) {
+        if(dragSourceEl) {
+             dragSourceEl.classList.remove('opacity-50');
+             dragSourceEl = null;
+        }
+        document.querySelectorAll('.drag-enter').forEach(el => el.classList.remove('drag-enter'));
+        dropOverlay.classList.remove('active');
+        dragCounter = 0;
+    });
+
+    function handleDragOver(e) {
+        if (!dragSourceEl) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    }
+    function handleDragEnter(e) {
+        if (!dragSourceEl) return;
+        e.preventDefault();
+        this.classList.add('drag-enter');
+    }
+    function handleDragLeave(e) {
+        if (!dragSourceEl) return;
+        this.classList.remove('drag-enter');
+    }
+
+    function handleItemDrop(e) {
+        e.preventDefault();
+        this.classList.remove('drag-enter');
+        if (!dragSourceEl || dragSourceEl === this) return;
+
+        const sourcePath = dragSourceEl.getAttribute('data-item-path');
+        const sourceName = dragSourceEl.getAttribute('data-item-name');
+        const destPath = this.getAttribute('data-dest-path');
+
+        let destName = destPath.split('/').pop() || 'Root Directory';
+        if (this.classList.contains('parent-dir-drop-zone')) destName = 'Parent Directory';
+
+        if (destPath === currentPath) {
+             showToast(`Item "${sourceName}" is already in this folder.`, 'warning');
+             return;
+        }
+
+        dropTargetData = { sourcePath, destPath, sourceEl: dragSourceEl };
+        moveConfirmModalEl.querySelector('#moveItemName').textContent = sourceName;
+        moveConfirmModalEl.querySelector('#moveDestName').textContent = destName;
+        openModal('#moveConfirmModal');
+    }
+
+    function handleFileDrop(e) {
+        e.preventDefault();
+        dropOverlay.classList.remove('active');
+        dragCounter = 0;
+        if (dragSourceEl || e.dataTransfer.files.length === 0) return;
+
+        const files = Array.from(e.dataTransfer.files);
+        const formData = new FormData();
+        files.forEach(file => formData.append('files', file));
+        showToast(`Uploading ${files.length} file(s)...`, 'info');
+
+        fetch("{{ url_for('upload_file', site_id=site.id, path=current_path) }}", { method: 'POST', body: formData })
+            .then(response => response.json())
+            .then(data => {
+                showToast(data.message, data.status);
+                if (data.status === 'success') setTimeout(() => window.location.reload(), 1000);
+            })
+            .catch(error => {
+                showToast('Failed to upload files.', 'danger');
+            });
     }
 });
 </script>
 {% endblock %}
-</body>
-</html>

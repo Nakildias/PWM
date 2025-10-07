@@ -5,27 +5,61 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/dialog/dialog.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/theme/{{ theme }}.css">
 <style>
+    /* CodeMirror Dark Theme Styling */
     .CodeMirror {
-        border: 1px solid #eee;
-        height: auto;
+        border: 1px solid var(--color-border);
+        height: 70vh;
+        border-radius: 8px;
+        background-color: #010409; /* Very dark background for the editor */
+    }
+    .CodeMirror-gutters {
+        background-color: #010409;
+        border-right: 1px solid var(--color-border);
+    }
+    .CodeMirror-vscrollbar, .CodeMirror-hscrollbar {
+        background: var(--color-surface);
+    }
+
+    /* Breadcrumb styling */
+    .breadcrumb a {
+        color: var(--color-primary);
+        transition: color 0.2s ease;
+    }
+    .breadcrumb a:hover {
+        color: var(--color-secondary);
+    }
+    .breadcrumb .separator {
+        color: var(--color-text-secondary);
+        margin: 0 0.5rem;
+    }
+    .breadcrumb .active {
+        color: var(--color-text-primary);
     }
 </style>
-<nav aria-label="breadcrumb">
-    <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
-        <li class="breadcrumb-item"><a href="{{ url_for('manage_files', site_id=site.id) }}">{{ site.name }} - File Manager</a></li>
-        <li class="breadcrumb-item active" aria-current="page">Editing: {{ file_path }}</li>
-    </ol>
+
+<nav class="breadcrumb text-gray-400 mb-4 text-sm" aria-label="breadcrumb">
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <span class="separator">/</span>
+    <a href="{{ url_for('manage_files', site_id=site.id) }}">{{ site.name }} - Files</a>
+    <span class="separator">/</span>
+    <span class="active">Editing: {{ file_path }}</span>
 </nav>
 
-<h1 class="h2">Edit File: {{ file_path }}</h1>
+<div class="flex items-center justify-between pb-4 mb-4 border-b border-gray-700">
+    <h1 class="text-3xl font-bold text-white"><i class="bi bi-file-earmark-code me-2 gradient-text"></i> Edit File: {{ file_path }}</h1>
+    <a href="{{ url_for('manage_files', site_id=site.id, path=parent_path) }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to File Manager
+    </a>
+</div>
 
 <form method="POST" action="{{ url_for('save_file', site_id=site.id, path=file_path) }}">
-    <div class="mb-3">
+    <div class="mb-4">
         <textarea id="codeeditor" name="content">{{ content }}</textarea>
     </div>
-    <button type="submit" class="btn btn-primary">Save Changes</button>
-    <a href="{{ url_for('manage_files', site_id=site.id, path=parent_path) }}" class="btn btn-secondary">Cancel</a>
+    <div class="flex justify-end gap-2">
+        <a href="{{ url_for('manage_files', site_id=site.id, path=parent_path) }}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i> Save Changes</button>
+    </div>
 </form>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/codemirror.min.js"></script>
@@ -40,13 +74,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.7/addon/dialog/dialog.min.js"></script>
 
 <script>
-    var editor = CodeMirror.fromTextArea(document.getElementById("codeeditor"), {
-        lineNumbers: true,
-        theme: "{{ theme }}",
-        mode: "{{ mode }}",
-        extraKeys: {
-            "Ctrl-F": "findPersistent"
-        }
+    document.addEventListener('DOMContentLoaded', function () {
+        var editor = CodeMirror.fromTextArea(document.getElementById("codeeditor"), {
+            lineNumbers: true,
+            theme: "{{ theme }}",
+            mode: "{{ mode }}",
+            extraKeys: {
+                "Ctrl-F": "findPersistent",
+                "Cmd-F": "findPersistent" // For Mac support
+            }
+        });
+        // Ensure editor renders correctly on load
+        setTimeout(() => editor.refresh(), 1);
     });
 </script>
 {% endblock %}

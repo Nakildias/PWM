@@ -1,54 +1,84 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-body">
-                <h2 class="card-title text-center">Edit User: {{ user.username }}</h2>
-                <form method="POST" action="">
-                    {{ form.hidden_tag() }}
-                    <div class="mb-3">
-                        {{ form.username.label(class="form-label") }}
-                        {{ form.username(class="form-control") }}
-                        {% if form.username.errors %}
-                            <div class="invalid-feedback d-block">
-                                {% for error in form.username.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    <div class="mb-3">
-                        {{ form.password.label(class="form-label") }}
-                        {{ form.password(class="form-control") }}
-                        <small class="form-text text-muted">Leave blank to keep current password.</small>
-                    </div>
-                    <div class="mb-3">
-                        {{ form.confirm_password.label(class="form-label") }}
-                        {{ form.confirm_password(class="form-control") }}
-                        {% if form.confirm_password.errors %}
-                            <div class="invalid-feedback d-block">
-                                {% for error in form.confirm_password.errors %}{{ error }}{% endfor %}
-                            </div>
-                        {% endif %}
-                    </div>
-                    <div class="mb-3 form-check">
-                        {{ form.is_admin(class="form-check-input") }}
-                        {{ form.is_admin.label(class="form-check-label") }}
-                        {% if user.id == current_user.id %}
-                        <small class="form-text text-danger">You cannot revoke your own admin privileges.</small>
-                        {% endif %}
-                    </div>
-                    <div class="d-grid">
-                        {{ form.submit(class="btn btn-primary") }}
-                    </div>
-                </form>
+<style>
+    .form-input {
+        background-color: var(--color-surface);
+        border: 1px solid var(--color-border);
+        color: var(--color-text-primary);
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .form-input:focus {
+        outline: none;
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+    }
+    .form-container {
+        background-color: #010409;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    }
+    .invalid-feedback {
+        color: #ff5555;
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+</style>
+
+<div class="flex items-center justify-between pb-4 mb-4 border-b border-gray-700">
+    <h1 class="text-3xl font-bold text-white"><i class="bi bi-person-gear me-2 gradient-text"></i> Edit User: {{ user.username }}</h1>
+    <a href="{{ url_for('manage_users') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i>
+        Back to User Management
+    </a>
+</div>
+
+<div class="w-full max-w-lg mx-auto p-8 space-y-8 form-container">
+    <form class="space-y-6" method="POST" action="">
+        {{ form.hidden_tag() }}
+
+        <div>
+            {{ form.username.label(class="block text-sm font-medium text-gray-400 mb-2") }}
+            {{ form.username(class="form-input appearance-none rounded-md relative block w-full px-3 py-2 placeholder-gray-500 focus:outline-none focus:z-10 sm:text-sm") }}
+            {% if form.username.errors %}
+                <div class="invalid-feedback">
+                    {% for error in form.username.errors %}{{ error }}{% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div>
+            {{ form.password.label(class="block text-sm font-medium text-gray-400 mb-2") }}
+            {{ form.password(class="form-input appearance-none rounded-md relative block w-full px-3 py-2 placeholder-gray-500 focus:outline-none focus:z-10 sm:text-sm") }}
+            <p class="mt-2 text-xs text-gray-500">Leave blank to keep current password.</p>
+        </div>
+
+        <div>
+            {{ form.confirm_password.label(class="block text-sm font-medium text-gray-400 mb-2") }}
+            {{ form.confirm_password(class="form-input appearance-none rounded-md relative block w-full px-3 py-2 placeholder-gray-500 focus:outline-none focus:z-10 sm:text-sm") }}
+            {% if form.confirm_password.errors %}
+                <div class="invalid-feedback">
+                    {% for error in form.confirm_password.errors %}{{ error }}{% endfor %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="flex items-start">
+            <div class="flex items-center h-5">
+                {{ form.is_admin(class="h-4 w-4 text-primary focus:ring-primary border-gray-600 rounded bg-gray-700") }}
             </div>
-            <div class="card-footer text-center">
-                <small class="text-muted">
-                    <a href="{{ url_for('manage_users') }}">Back to User Management</a>
-                </small>
+            <div class="ml-3 text-sm">
+                {{ form.is_admin.label(class="font-medium text-gray-300") }}
+                {% if user.id == current_user.id %}
+                <p class="text-xs text-red-400">You cannot revoke your own admin privileges.</p>
+                {% endif %}
             </div>
         </div>
-    </div>
+
+        <div>
+            {{ form.submit(class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white btn-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-primary") }}
+        </div>
+    </form>
 </div>
 {% endblock %}
