@@ -31,3 +31,6 @@ PWM is a powerful, self-hosted website manager that allows you to create, manage
 ## Usage
 
 Once the service is running, you can access the PWM dashboard by navigating to `http://your-server-ip:5000` in your web browser. From there, you can create a new account and start managing your websites.
+
+
+### I will need to make it so the live edit runs the website through a python flask webserver to make it reliable... Right now the live edit feature is flawed and not very fun to use I will work on this later.
