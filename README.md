@@ -15,7 +15,7 @@ PWM is a powerful, self-hosted website manager that allows you to create, manage
 
 1.  **Clone the repository**:
     ```bash
-    git clone [https://github.com/your-username/PWM.git](https://github.com/your-username/PWM.git)
+    git clone https://github.com/Nakildias/PWM
     cd PWM
     ```
 2.  **Run the installer**:
